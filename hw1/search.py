@@ -5,6 +5,23 @@ from preprocessing import preprocess, preprocess_corpus
 from index_dict import build_tf_index, compute_idf
 from index_matrix import build_vocab, build_tf_matrix, compute_idf_vector
 from index_bm25_lib import build_bm25_lib
+from index_tf_lib import build_tf_lib
+
+
+def search_tf_lib(query, vectorizer, matrix, docs, top_k=5):
+    # частотный индекс с библиотекой
+    q_vec = vectorizer.transform([query])
+    scores = (matrix @ q_vec.T).toarray().ravel()
+    best = np.argsort(-scores)[:top_k]
+    return [(float(scores[i]), docs[i]) for i in best if scores[i] > 0]
+
+
+def search_bm25_lib(query, bm25, docs, top_k=5):
+    # BM-25 индекс с библиотекой
+    q = set(preprocess(query))
+    scores = bm25.get_scores(q)
+    best = np.argsort(-scores)[:top_k]
+    return [(float(scores[i]), docs[int(i)]) for i in best if scores[i] > 0]
 
 
 def search_tf_dict(query, tf_index, docs, top_k=5):
@@ -84,14 +101,6 @@ def search_bm25_matrix(query, tf_matrix, vocab, docs, top_k=5):
     return [(float(scores[i]), docs[int(i)]) for i in best if scores[i] > 0]
 
 
-def search_bm25_lib(query, bm25, docs, top_k=5):
-    # BM-25 индекс с библиотекой
-    q = set(preprocess(query))
-    scores = bm25.get_scores(q)
-    best = np.argsort(-scores)[:top_k]
-    return [(float(scores[i]), docs[int(i)]) for i in best if scores[i] > 0]
-
-
 def run_search(
         query,
         csv_path,
@@ -100,6 +109,14 @@ def run_search(
 ):
     docs = load_corpus(csv_path)
     tokenized_docs = preprocess_corpus(docs)
+
+    if method == "tf_lib":
+        vectorizer, matrix = build_tf_lib(docs)
+        return search_tf_lib(query, vectorizer, matrix, docs, top_k)
+
+    if method == "bm25_lib":
+        bm25 = build_bm25_lib(tokenized_docs)
+        return search_bm25_lib(query, bm25, docs, top_k)
 
     if method == "tf_dict":
         tf_index = build_tf_index(tokenized_docs)
@@ -119,9 +136,5 @@ def run_search(
         vocab = build_vocab(tokenized_docs)
         x = build_tf_matrix(tokenized_docs, vocab)
         return search_bm25_matrix(query, x, vocab, docs, top_k)
-
-    if method == "bm25_lib":
-        bm25 = build_bm25_lib(tokenized_docs)
-        return search_bm25_lib(query, bm25, docs, top_k)
 
     raise ValueError(f"Unknown method: {method}")
